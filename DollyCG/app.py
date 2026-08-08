@@ -214,7 +214,9 @@ def main_app():
         cy += 1
         pdf.set_fill_color(*LIGHT_BLUE)
         pdf.rect(8, cy, 60, 4.5, 'F')
-        pdf.rect(8, cy, 60, 21.5, 'D') 
+        # pdf.rect(8, cy, 60, 21.5, 'D')
+        assumptions_box_h = 26
+        pdf.rect(8, cy, 60, assumptions_box_h, 'D')
         pdf.set_font('Helvetica', 'B', 8)
         pdf.set_xy(8, cy)
         pdf.cell(60, 4.5, "ASSUMPTIONS", align='C')
@@ -227,6 +229,8 @@ def main_app():
         f"- g (gravity) = {g_val} m/s²"
         )
         pdf.multi_cell(58, 3.8, assumptions_text)
+
+        top_section_bottom = cy + assumptions_box_h
       
         pdf.rect(72, y_top, 70, 64)
         if uploaded_image:
@@ -249,7 +253,10 @@ def main_app():
         pdf.multi_cell(52, 4, f"Z (Height) = {height:.0f} mm\nY (Width) = {width:.0f} mm\nX (Length) = {length:.0f} mm\n\nSupport Base Limits:\nHalf Wheelbase (L/2) = {length/2:.0f} mm\nHalf Track (W/2) = {width/2:.0f} mm\n\nStatic CG Vector:\n[{cg_x_stat:.0f}, {cg_y_stat:.0f}, {cg_z_stat:.0f}] mm")
 
         # 2. DYNAMIC CG SHIFT CALCULATION
-        y_dyn = 85
+        # y_dyn = 85
+
+        top_row_bottom = y_top + 64
+        y_dyn = max(top_row_bottom, top_section_bottom) + 4
         pdf.set_fill_color(*NAVY)
         pdf.set_text_color(*WHITE)
         pdf.set_font('Helvetica', 'B', 9)
@@ -278,7 +285,9 @@ def main_app():
             pdf.multi_cell(col_w-4, 3.8, formula_txt, align='L')
 
         # 3. STABILITY CHECK & DSI
-        y_stab = 123
+        # y_stab = 123
+
+        y_stab = y_dyn_box + 31
         pdf.set_fill_color(*NAVY)
         pdf.set_text_color(*WHITE)
         pdf.set_font('Helvetica', 'B', 9)
@@ -342,7 +351,9 @@ def main_app():
         ), align='C')
 
         # 4. RESULT SUMMARY & 5. RECOMMENDATIONS & 6. DIAGRAM (Shifted y_res down to 162)
-        y_res = 162
+        # y_res = 162
+
+        y_res = y_stab + 39
         pdf.set_fill_color(*NAVY)
         pdf.set_text_color(*WHITE)
         pdf.set_font('Helvetica', 'B', 8)
@@ -408,7 +419,9 @@ def main_app():
         os.remove(poly_img)
 
         # 7. RISK EVALUATION HAZARD MATRIX
-        y_haz = 191
+        # y_haz = 191
+
+        y_haz = y_res + 33
         pdf.set_fill_color(*NAVY)
         pdf.set_text_color(*WHITE)
         pdf.set_font('Helvetica', 'B', 8)
