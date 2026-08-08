@@ -319,8 +319,10 @@ def main_app():
         # Scale legend cleanly positioned above the next section
         pdf.set_xy(128, cy_dsi + 1)
         pdf.set_font('Helvetica', 'B', 5.5)
-        pdf.cell(74, 3.5, "SCALE: >1.20 (SAFE) | 1.0-1.20 (ACCEPT) | 0.8-1.0 (MODERATE) | <0.8
-        (HIGH RISK)", align='C')
+        pdf.cell(74, 3.5, (
+           "SCALE: >1.20 (SAFE) | 1.0-1.20 (ACCEPT) | "
+           "0.8-1.0 (MODERATE) | <0.8 (HIGH RISK)"
+        ), align='C')
 
         # y_stab = 120
         # pdf.set_fill_color(*NAVY)
