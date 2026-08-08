@@ -215,7 +215,7 @@ def main_app():
         pdf.set_fill_color(*LIGHT_BLUE)
         pdf.rect(8, cy, 60, 4.5, 'F')
         # pdf.rect(8, cy, 60, 21.5, 'D')
-        assumptions_box_h = 26
+        assumptions_box_h = 35
         pdf.rect(8, cy, 60, assumptions_box_h, 'D')
         pdf.set_font('Helvetica', 'B', 8)
         pdf.set_xy(8, cy)
@@ -271,6 +271,7 @@ def main_app():
         ]
 
         y_dyn_box = y_dyn + 7
+        dyn_box_h = 35
         for idx, (title, acc, delta, vec, direc) in enumerate(conds):
             cx = 8 + idx * (col_w + 2)
             pdf.set_fill_color(*LIGHT_BLUE)
@@ -278,16 +279,17 @@ def main_app():
             pdf.set_font('Helvetica', 'B', 8)
             pdf.set_xy(cx, y_dyn_box)
             pdf.cell(col_w, 5, title, border=1, align='C', fill=True)
-            pdf.rect(cx, y_dyn_box+5, col_w, 25)
+            pdf.rect(cx, y_dyn_box+5, col_w, dyn_box_h)
             pdf.set_font('Helvetica', '', 7)
             pdf.set_xy(cx+2, y_dyn_box+6)
             formula_txt = f"Formula: Delta = (h * a) / g\nh = {cg_z_stat:.0f} mm, a = {acc}g\nDelta = ({cg_z_stat:.0f} * {acc}g) / g = {delta:.1f} mm\n\nResulting Dynamic CG Vector:\n({vec[0]:.0f}, {vec[1]:.0f}, {vec[2]:.0f}) mm"
-            pdf.multi_cell(col_w-4, 3.8, formula_txt, align='L')
-
+            # pdf.multi_cell(col_w-4, 3.8, formula_txt, align='L')
+            pdf.multi_cell(col_w-4, 3.3, formula_txt)
+          
         # 3. STABILITY CHECK & DSI
         # y_stab = 123
 
-        y_stab = y_dyn_box + 31
+        y_stab = y_dyn_box + dyn_box_h + 6
         pdf.set_fill_color(*NAVY)
         pdf.set_text_color(*WHITE)
         pdf.set_font('Helvetica', 'B', 9)
@@ -353,7 +355,7 @@ def main_app():
         # 4. RESULT SUMMARY & 5. RECOMMENDATIONS & 6. DIAGRAM (Shifted y_res down to 162)
         # y_res = 162
 
-        y_res = y_stab + 39
+        y_res = y_stab + 48
         pdf.set_fill_color(*NAVY)
         pdf.set_text_color(*WHITE)
         pdf.set_font('Helvetica', 'B', 8)
