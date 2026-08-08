@@ -172,7 +172,7 @@ def main_app():
         pdf.cell(190, 8, f"{dolly_name.upper()} - DYNAMIC CG CALCULATION & RISK EVALUATION", align='C')
 
         # 1. TOP ROW: DETAILS, STATIC CG, ASSUMPTIONS, IMAGE, DIMS
-        y_top = 20
+        y_top = 18
         pdf.set_text_color(0, 0, 0)
         
         pdf.set_fill_color(*NAVY)
@@ -180,24 +180,26 @@ def main_app():
         pdf.set_font('Helvetica', 'B', 8)
         pdf.set_xy(8, y_top)
         pdf.cell(60, 5, "DOLLY DETAILS", border=1, align='C', fill=True)
+      
         pdf.set_text_color(0, 0, 0)
-        pdf.set_font('Helvetica', '', 8)
+        pdf.set_font('Helvetica', '', 7)
         details = [("Dolly Name", dolly_name), ("Length (L)", f"{length:.0f} mm"), 
                    ("Width (W)", f"{width:.0f} mm"), ("Height (H)", f"{height:.0f} mm"), 
                    ("Loaded Weight", f"{weight:.0f} kg")]
         cy = y_top + 5
         for lbl, val in details:
             pdf.set_xy(8, cy)
-            pdf.cell(30, 4.5, lbl, border=1)
-            pdf.cell(30, 4.5, val, border=1, align='C')
-            cy += 4.5
+            pdf.cell(30, 3.2, lbl, border=1)
+            pdf.cell(30, 3.2, val, border=1, align='C')
+            cy += 3.2
 
-        cy += 2
+        cy += 1
         pdf.set_fill_color(*NAVY)
         pdf.set_text_color(*WHITE)
         pdf.set_font('Helvetica', 'B', 8)
         pdf.set_xy(8, cy)
         pdf.cell(60, 5, "ESTIMATED STATIC CG", border=1, align='C', fill=True)
+      
         pdf.set_text_color(0, 0, 0)
         pdf.set_font('Helvetica', '', 8)
         cg_dets = [("CG-X (Length)", f"{cg_x_stat:.0f} mm"), ("CG-Y (Width)", f"{cg_y_stat:.0f} mm"),
@@ -205,42 +207,49 @@ def main_app():
         cy += 5
         for lbl, val in cg_dets:
             pdf.set_xy(8, cy)
-            pdf.cell(30, 4.5, lbl, border=1)
-            pdf.cell(30, 4.5, val, border=1, align='C')
-            cy += 4.5
+            pdf.cell(30, 3.2, lbl, border=1)
+            pdf.cell(30, 3.2, val, border=1, align='C')
+            cy += 3.2
 
-        cy += 2
+        cy += 1
         pdf.set_fill_color(*LIGHT_BLUE)
-        pdf.rect(8, cy, 60, 5, 'F')
-        pdf.rect(8, cy, 60, 23, 'D') 
+        pdf.rect(8, cy, 60, 4.5, 'F')
+        pdf.rect(8, cy, 60, 21.5, 'D') 
         pdf.set_font('Helvetica', 'B', 8)
         pdf.set_xy(8, cy)
-        pdf.cell(60, 5, "ASSUMPTIONS", align='C')
-        pdf.set_font('Helvetica', '', 7)
-        pdf.set_xy(10, cy + 6)
-        pdf.multi_cell(56, 3.5, f"- Push accel = {acc_push} g ({acc_push*g_val:.2f} m/s²)\n- Stop/Brake = {acc_brake} g ({acc_brake*g_val:.2f} m/s²)\n- Side turn = {acc_turn} g ({acc_turn*g_val:.2f} m/s²)\n- g (gravity) = {g_val} m/s²")
-
-        pdf.rect(72, y_top, 70, 56)
+        pdf.cell(60, 4.5, "ASSUMPTIONS", align='C')
+        pdf.set_font('Helvetica', '', 6.5)
+        pdf.set_xy(9, cy + 5)
+        assumptions_text = (
+        f"- Push accel = {acc_push} g ({acc_push*g_val:.2f} m/s²)\n"
+        f"- Stop/Brake = {acc_brake} g ({acc_brake*g_val:.2f} m/s²)\n"
+        f"- Side turn = {acc_turn} g ({acc_turn*g_val:.2f} m/s²)\n"
+        f"- g (gravity) = {g_val} m/s²"
+        )
+        pdf.multi_cell(58, 3.8, assumptions_text)
+      
+        pdf.rect(72, y_top, 70, 64)
         if uploaded_image:
             img = Image.open(uploaded_image).convert('RGB')
             tmp_img = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg").name
             img.save(tmp_img)
-            pdf.image(tmp_img, x=73, y=y_top+1, w=68, h=54)
+            pdf.image(tmp_img, x=73, y=y_top+1, w=68, h=62)
             os.remove(tmp_img)
         else:
-            pdf.set_xy(72, y_top+25)
+            pdf.set_xy(72, y_top+29)
+            pdf.set_font('Helvetica', 'B', 8)
             pdf.cell(70, 5, "[ Image Placeholder ]", align='C')
 
-        pdf.rect(146, y_top, 56, 56)
+        pdf.rect(146, y_top, 56, 64)
         pdf.set_font('Helvetica', 'B', 8)
         pdf.set_xy(146, y_top+2)
         pdf.cell(56, 5, "DIMENSIONS & LIMITS", align='C')
-        pdf.set_font('Helvetica', '', 7.5)
+        pdf.set_font('Helvetica', '', 7)
         pdf.set_xy(148, y_top+10)
         pdf.multi_cell(52, 4, f"Z (Height) = {height:.0f} mm\nY (Width) = {width:.0f} mm\nX (Length) = {length:.0f} mm\n\nSupport Base Limits:\nHalf Wheelbase (L/2) = {length/2:.0f} mm\nHalf Track (W/2) = {width/2:.0f} mm\n\nStatic CG Vector:\n[{cg_x_stat:.0f}, {cg_y_stat:.0f}, {cg_z_stat:.0f}] mm")
 
         # 2. DYNAMIC CG SHIFT CALCULATION
-        y_dyn = 80
+        y_dyn = 85
         pdf.set_fill_color(*NAVY)
         pdf.set_text_color(*WHITE)
         pdf.set_font('Helvetica', 'B', 9)
@@ -262,8 +271,8 @@ def main_app():
             pdf.set_font('Helvetica', 'B', 8)
             pdf.set_xy(cx, y_dyn_box)
             pdf.cell(col_w, 5, title, border=1, align='C', fill=True)
-            pdf.rect(cx, y_dyn_box+5, col_w, 24)
-            pdf.set_font('Helvetica', '', 7.5)
+            pdf.rect(cx, y_dyn_box+5, col_w, 25)
+            pdf.set_font('Helvetica', '', 7)
             pdf.set_xy(cx+2, y_dyn_box+6)
             formula_txt = f"Formula: Delta = (h * a) / g\nh = {cg_z_stat:.0f} mm, a = {acc}g\nDelta = ({cg_z_stat:.0f} * {acc}g) / g = {delta:.1f} mm\n\nResulting Dynamic CG Vector:\n({vec[0]:.0f}, {vec[1]:.0f}, {vec[2]:.0f}) mm"
             pdf.multi_cell(col_w-4, 3.8, formula_txt, align='L')
