@@ -24,7 +24,7 @@ st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 # ==========================================
 # Change these to your preferred secure credentials
 VALID_USERNAME = st.secrets["credentials"]["username"]
-VALID_PASSWORD = st.secrets["credentials"]["username"]
+VALID_PASSWORD = st.secrets["credentials"]["password"]
 
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
