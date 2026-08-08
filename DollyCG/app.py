@@ -385,7 +385,8 @@ def main_app():
             pdf.set_xy(bx, y_sign + 4)
             pdf.cell(60, 4, f"DATE: {dt}", border='LBR')
 
-        return pdf.output(dest='S').encode('latin-1')
+        return bytes(pdf.output())
+
 
     # --- DOWNLOAD BUTTON ---
     st.markdown("---")
