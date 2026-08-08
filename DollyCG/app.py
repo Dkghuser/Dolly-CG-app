@@ -355,13 +355,13 @@ def main_app():
         
         # Determine colors: GREEN, YELLOW, ORANGE, RED
         if "SAFE" in overall_risk_text:
-        bg_color, fg_color = (0, 150, 0), (255, 255, 255) # GREEN (White text)
+           bg_color, fg_color = (0, 150, 0), (255, 255, 255) # GREEN (White text)
         elif "ACCEPT" in overall_risk_text:
-        bg_color, fg_color = (255, 220, 0), (0, 0, 0) # YELLOW (Black text)
+           bg_color, fg_color = (255, 220, 0), (0, 0, 0) # YELLOW (Black text)
         elif "MODERATE" in overall_risk_text:
-        bg_color, fg_color = (255, 140, 0), (255, 255, 255) # ORANGE (White text)
+           bg_color, fg_color = (255, 140, 0), (255, 255, 255) # ORANGE (White text)
         else:
-        bg_color, fg_color = (200, 0, 0), (255, 255, 255) # RED / HIGH RISK (White text)
+           bg_color, fg_color = (200, 0, 0), (255, 255, 255) # RED / HIGH RISK (White text)
 
         # Draw color background rectangle and label text
         pdf.set_fill_color(*bg_color)
