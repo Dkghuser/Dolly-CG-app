@@ -13,8 +13,8 @@ st.set_page_config(page_title="Dolly Dynamic CG & Risk Evaluation", layout="wide
 # AUTHENTICATION SETUP
 # ==========================================
 # Change these to your preferred secure credentials
-VALID_USERNAME = "admin"
-VALID_PASSWORD = "Password123!"
+VALID_USERNAME = "TKM"
+VALID_PASSWORD = "dolCG"
 
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
