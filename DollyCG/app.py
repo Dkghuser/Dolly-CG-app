@@ -375,9 +375,13 @@ def main_app():
         # Recommendations Box
         pdf.rect(72, y_res+6, 64, 25)
         pdf.set_xy(74, y_res+8)
-        rec_txt = "- Limit dolly speed to <= 3 km/h.\n- Avoid sudden stops and sharp turns.\n- Reduce
-        CG height whenever possible.\n- Ensure load is properly secured.\n- Use dolly on smooth, level
-        floors only."
+        rec_txt = (
+           "- Limit dolly speed to <= 3 km/h.\n"
+           "- Avoid sudden stops and sharp turns.\n"
+           "- Reduce CG height whenever possible.\n"
+           "- Ensure load is properly secured.\n"
+           "- Use dolly on smooth, level floors only."
+        )
         pdf.multi_cell(60, 3.8, rec_txt)
 
         # Polygon Box
