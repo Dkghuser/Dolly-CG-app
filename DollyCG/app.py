@@ -29,11 +29,19 @@ def login_screen():
         submit_button = st.form_submit_button("Login")
         
         if submit_button:
-            if username == VALID_USERNAME and password == VALID_PASSWORD:
-                st.session_state["authenticated"] = True
-                st.rerun()
-            else:
-                st.error("❌ Invalid Username or Password")
+
+            # Strip spaces and normalize inputs
+          if username.strip() == VALID_USERNAME.strip() and password.strip() == VALID_PASSWORD:
+            st.session_state["authenticated"] = True
+            st.rerun()
+          else:
+            st.error("❌ Invalid Username or Password")
+
+           # if username == VALID_USERNAME and password == VALID_PASSWORD:
+          #      st.session_state["authenticated"] = True
+            #    st.rerun()
+          #  else:
+               # st.error("❌ Invalid Username or Password")
 
 # ==========================================
 # MAIN APPLICATION
