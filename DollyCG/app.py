@@ -399,10 +399,11 @@ def main_app():
         pdf.rect(8, y_res+6, 60, 25)
         pdf.set_font('Helvetica', '', 7.5)
         pdf.set_xy(10, y_res+7.5)
-        sum_txt = f"Static CG: ({cg_x_stat:.0f}, {cg_y_stat:.0f}, {cg_z_stat:.0f}) mm\nPush CG:
-        ({cg_push[0]:.0f}, {cg_push[1]:.0f}, {cg_push[2]:.0f}) mm\nBrake CG: ({cg_brake[0]:.0f},
-        {cg_brake[1]:.0f}, {cg_brake[2]:.0f}) mm\nTurn CG: ({cg_turn[0]:.0f}, {cg_turn[1]:.0f},
-        {cg_turn[2]:.0f}) mm"
+        sum_txt = (f"Static CG: ({cg_x_stat:.0f}, {cg_y_stat:.0f}, {cg_z_stat:.0f}) mm\n"
+                   f"Push CG: ({cg_push[0]:.0f}, {cg_push[1]:.0f}, {cg_push[2]:.0f}) mm\n"
+                   f"Brake CG: ({cg_brake[0]:.0f}, {cg_brake[1]:.0f}, {cg_brake[2]:.0f}) mm\n"
+                   f"Turn CG: ({cg_turn[0]:.0f}, {cg_turn[1]:.0f}, {cg_turn[2]:.0f}) mm"
+                  )
         pdf.multi_cell(56, 3.5, sum_txt)
         
         # --- COLOR-CODED OVERALL EVALUATION BADGE ---
