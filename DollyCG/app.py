@@ -7,15 +7,19 @@ import os
 import datetime
 
 # --- PAGE CONFIGURATION (Must be the first command) ---
-st.set_page_config(page_title="Dolly Dynamic CG & Risk Evaluation", layout="wide")
+st.set_page_config(page_title="Dolly Dynamic CG & Risk Evaluation", layout="wide", initial_sidebar_state="expanded")
 
 # --- Hide streamlit header, footer & github icon ---
 hide_streamlit_style = """
    <style>
    #MainMenu {visibility: hidden;}
    footer {visibility: hidden;}
-   header {visibility: hidden;}
-   .stAppHeader {display: none;}
+   .stAppToolbar {display: none !important;}
+   [data-testid="stToolbar"] {display: none !important;}
+   [data-testid="stSidebar"] {
+      display: block !important;
+      visibility: visible !important;
+   }
    </style>
 """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
