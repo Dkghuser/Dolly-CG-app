@@ -324,65 +324,6 @@ def main_app():
            "0.8-1.0 (MODERATE) | <0.8 (HIGH RISK)"
         ), align='C')
 
-        # y_stab = 120
-        # pdf.set_fill_color(*NAVY)
-        # pdf.set_text_color(*WHITE)
-        # pdf.set_font('Helvetica', 'B', 9)
-        # pdf.set_xy(8, y_stab)
-        # pdf.cell(118, 6, "2. STABILITY CHECK", border=1, align='C', fill=True)
-        # pdf.set_xy(128, y_stab)
-        # pdf.cell(74, 6, "3. DYNAMIC STABILITY INDEX (DSI)", border=1, align='C', fill=True)
-
-        # pdf.set_text_color(0, 0, 0)
-        # pdf.set_font('Helvetica', 'B', 7)
-        # cols_stab = ["Condition", "Dyn X", "Dyn Y", "Dyn Z", "L/2 Lim", "W/2 Lim", "Result"]
-        # w_stab = [22, 14, 14, 14, 18, 18, 18]
-        # pdf.set_xy(8, y_stab + 7)
-        # for w, h in zip(w_stab, cols_stab): pdf.cell(w, 5, h, border=1, align='C')
-        
-        # pdf.set_font('Helvetica', '', 7)
-        # rows_stab = [
-        #     ("Static", cg_x_stat, cg_y_stat, cg_z_stat, length/2, width/2, "STABLE"),
-        #     (f"Push ({acc_push}g)", cg_push[0], cg_push[1], cg_push[2], length/2, width/2, "STABLE"),
-        #     (f"Brake ({acc_brake}g)", cg_brake[0], cg_brake[1], cg_brake[2], length/2, width/2, overall_risk_text),
-        #     (f"Turn ({acc_turn}g)", cg_turn[0], cg_turn[1], cg_turn[2], length/2, width/2, "MODERATE")
-        # ]
-        # cy = y_stab + 12
-        # for r in rows_stab:
-        #     pdf.set_xy(8, cy)
-        #     pdf.cell(w_stab[0], 4.5, r[0], border=1)
-        #     pdf.cell(w_stab[1], 4.5, f"{r[1]:.0f}", border=1, align='C')
-        #     pdf.cell(w_stab[2], 4.5, f"{r[2]:.0f}", border=1, align='C')
-        #     pdf.cell(w_stab[3], 4.5, f"{r[3]:.0f}", border=1, align='C')
-        #     pdf.cell(w_stab[4], 4.5, f"{r[4]:.0f}", border=1, align='C')
-        #     pdf.cell(w_stab[5], 4.5, f"{r[5]:.0f}", border=1, align='C')
-        #     pdf.cell(w_stab[6], 4.5, r[6], border=1, align='C')
-        #     cy += 4.5
-
-        # pdf.set_xy(128, y_stab + 7)
-        # pdf.set_font('Helvetica', 'B', 7)
-        # pdf.cell(74, 5, f"Formula: DSI = (Half Wheelbase) / Dynamic CG_X", border=1, align='C')
-        # pdf.set_xy(128, y_stab + 12)
-        # for w, h in zip([28, 15, 12, 19], ["Condition", "Dyn CG-X", "DSI", "Risk Level"]):
-        #     pdf.cell(w, 5, h, border=1, align='C')
-        
-        # pdf.set_font('Helvetica', '', 7)
-        # dsi_rows = [("Normal Push", cg_push[0], dsi_push, get_risk_level(dsi_push)[0]),
-        #             ("Sudden Brake", cg_brake[0], dsi_brake, overall_risk_text)]
-        # cy = y_stab + 17
-        # for r in dsi_rows:
-        #     pdf.set_xy(128, cy)
-        #     pdf.cell(28, 4.5, r[0], border=1)
-        #     pdf.cell(15, 4.5, f"{r[1]:.0f}", border=1, align='C')
-        #     pdf.cell(12, 4.5, f"{r[2]:.2f}", border=1, align='C')
-        #     pdf.cell(19, 4.5, r[3], border=1, align='C')
-        #     cy += 4.5
-
-        # pdf.set_xy(128, cy + 1)
-        # pdf.set_font('Helvetica', 'B', 6)
-        # pdf.cell(74, 4, "SCALE: >1.20 (SAFE) | 1.0-1.20 (ACCEPT) | 0.8-1.0 (MODERATE) | <0.8 (HIGH RISK)", align='C')
-
-
         # 4. RESULT SUMMARY & 5. RECOMMENDATIONS & 6. DIAGRAM (Shifted y_res down to 162)
         y_res = 162
         pdf.set_fill_color(*NAVY)
@@ -444,36 +385,6 @@ def main_app():
         poly_img = generate_support_polygon_diagram()
         pdf.image(poly_img, x=142, y=y_res+7, w=58, h=23)
         os.remove(poly_img)
-
-        # # 4. RESULT SUMMARY & 5. RECOMMENDATIONS & 6. DIAGRAM
-        # y_res = 155
-        # pdf.set_fill_color(*NAVY)
-        # pdf.set_text_color(*WHITE)
-        # pdf.set_font('Helvetica', 'B', 8)
-        
-        # pdf.set_xy(8, y_res)
-        # pdf.cell(60, 6, "4. RESULT SUMMARY", border=1, align='C', fill=True)
-        # pdf.set_xy(72, y_res)
-        # pdf.cell(64, 6, "5. RECOMMENDATIONS", border=1, align='C', fill=True)
-        # pdf.set_xy(140, y_res)
-        # pdf.cell(62, 6, "6. SUPPORT POLYGON", border=1, align='C', fill=True)
-
-        # pdf.set_text_color(0, 0, 0)
-        # pdf.rect(8, y_res+6, 60, 26)
-        # pdf.set_font('Helvetica', '', 7.5)
-        # pdf.set_xy(10, y_res+8)
-        # sum_txt = f"Static CG: ({cg_x_stat:.0f}, {cg_y_stat:.0f}, {cg_z_stat:.0f}) mm\nPush CG: ({cg_push[0]:.0f}, {cg_push[1]:.0f}, {cg_push[2]:.0f}) mm\nBrake CG: ({cg_brake[0]:.0f}, {cg_brake[1]:.0f}, {cg_brake[2]:.0f}) mm\nTurn CG: ({cg_turn[0]:.0f}, {cg_turn[1]:.0f}, {cg_turn[2]:.0f}) mm\n\nOVERALL EVAL: {overall_risk_text}"
-        # pdf.multi_cell(56, 3.8, sum_txt)
-
-        # pdf.rect(72, y_res+6, 64, 26)
-        # pdf.set_xy(74, y_res+8)
-        # rec_txt = "- Limit dolly speed to <= 3 km/h.\n- Avoid sudden stops and sharp turns.\n- Reduce CG height whenever possible.\n- Ensure load is properly secured.\n- Use dolly on smooth, level floors only."
-        # pdf.multi_cell(60, 4, rec_txt)
-
-        # pdf.rect(140, y_res+6, 62, 26)
-        # poly_img = generate_support_polygon_diagram()
-        # pdf.image(poly_img, x=142, y=y_res+7, w=58, h=24)
-        # os.remove(poly_img)
 
         # 7. RISK EVALUATION HAZARD MATRIX
         y_haz = 191
