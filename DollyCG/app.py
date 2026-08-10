@@ -69,7 +69,7 @@ def main_app():
     st.sidebar.button("Logout", on_click=lambda: st.session_state.update({"authenticated": False}))
     st.sidebar.markdown("---")
 
-    st.title("🚜 Dolly Dynamic CG & Risk Evaluation Generator")
+    st.title("Dolly Dynamic CG & Risk Evaluation Generator")
     st.markdown("Generates an industrial-standard PDF evaluation dashboard matching dynamic stability requirements.")
 
     # --- SIDEBAR INPUTS ---
