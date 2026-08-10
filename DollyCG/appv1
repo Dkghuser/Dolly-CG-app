@@ -1,491 +1,470 @@
+import io
+import math
+from datetime import datetime
+from pathlib import Path
+
 import streamlit as st
-from fpdf import FPDF
-from PIL import Image
-import matplotlib.pyplot as plt
-import tempfile
-import os
-import datetime
+from PIL import Image, ImageDraw, ImageFont
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER, TA_LEFT
+from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import mm
+from reportlab.platypus import (
+    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
+    Image as RLImage, PageBreak, KeepTogether
+)
 
-# --- PAGE CONFIGURATION (Must be the first command) ---
-st.set_page_config(page_title="Dolly Dynamic CG & Risk Evaluation", 
-                   layout="wide", 
-                   #initial_sidebar_state="expanded"
-                  )
+G = 9.81
 
-# --- Hide streamlit header, footer & github icon ---
-# hide_streamlit_style = """
-#    <style>
-#    #MainMenu {visibility: hidden;}
-#    footer {visibility: hidden;}
-#    .stAppToolbar {display: none !important;}
-#    [data-testid="stToolbar"] {display: none !important;}
-#    [data-testid="stSidebar"] {
-#       display: block !important;
-#       visibility: visible !important;
-#    }
-#    </style>
-# """
-# st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+st.set_page_config(
+    page_title="Dolly Dynamic CG & Risk Evaluation",
+    page_icon="⚙️",
+    layout="wide",
+)
 
-# ==========================================
-# AUTHENTICATION SETUP
-# ==========================================
-# Change these to your preferred secure credentials
-VALID_USERNAME = st.secrets["credentials"]["username"]
-VALID_PASSWORD = st.secrets["credentials"]["password"]
+# -----------------------------
+# Helpers
+# -----------------------------
+def fmt(x, decimals=1):
+    return f"{x:,.{decimals}f}"
 
-if "authenticated" not in st.session_state:
-    st.session_state["authenticated"] = False
+def risk_level(score):
+    if score <= 6:
+        return "LOW"
+    if score <= 12:
+        return "MEDIUM"
+    return "HIGH"
 
-def login_screen():
-    st.title("🔒 Restricted Access")
-    st.markdown("Please log in to access the Dolly Dynamic CG & Risk Evaluation Tool.")
-    
-    with st.form("login_form"):
-        username = st.text_input("Username")
-        password = st.text_input("Password", type="password")
-        submit_button = st.form_submit_button("Login")
-        
-        if submit_button:
+def make_dimension_image(uploaded_bytes, L, W, H):
+    """Adds simple dimension callouts to the user's photo.
+    The labels are based on the user-entered dimensions; the app does not
+    infer physical scale from the photograph.
+    """
+    img = Image.open(io.BytesIO(uploaded_bytes)).convert("RGB")
+    max_w = 1200
+    if img.width > max_w:
+        scale = max_w / img.width
+        img = img.resize((int(img.width * scale), int(img.height * scale)))
 
-            # Strip spaces and normalize inputs
-          if username.strip() == VALID_USERNAME.strip() and password.strip() == VALID_PASSWORD:
-            st.session_state["authenticated"] = True
-            st.rerun()
-          else:
-            st.error("❌ Invalid Username or Password")
+    canvas = img.copy()
+    draw = ImageDraw.Draw(canvas)
+    font = ImageFont.load_default()
 
-           # if username == VALID_USERNAME and password == VALID_PASSWORD:
-          #      st.session_state["authenticated"] = True
-            #    st.rerun()
-          #  else:
-               # st.error("❌ Invalid Username or Password")
+    # translucent-ish white boxes are simulated with solid light background.
+    labels = [
+        (f"L = {L:.0f} mm", (20, 20)),
+        (f"W = {W:.0f} mm", (20, 50)),
+        (f"H = {H:.0f} mm", (20, 80)),
+        ("Dimensions supplied by user; not photogrammetric measurement",
+         (20, 110)),
+    ]
+    for text, pos in labels:
+        bbox = draw.textbbox(pos, text, font=font)
+        draw.rectangle((bbox[0]-5, bbox[1]-4, bbox[2]+5, bbox[3]+4),
+                       fill="white", outline="black")
+        draw.text(pos, text, fill="black", font=font)
 
-# ==========================================
-# MAIN APPLICATION
-# ==========================================
-def main_app():
-    # Logout button in the sidebar
-    st.sidebar.button("Logout", on_click=lambda: st.session_state.update({"authenticated": False}))
-    st.sidebar.markdown("---")
+    # Vertical height arrow on right side.
+    x = canvas.width - 35
+    y1 = 30
+    y2 = max(100, canvas.height - 30)
+    draw.line((x, y1, x, y2), fill="red", width=3)
+    draw.polygon([(x, y1), (x-7, y1+12), (x+7, y1+12)], fill="red")
+    draw.polygon([(x, y2), (x-7, y2-12), (x+7, y2-12)], fill="red")
+    draw.text((max(5, x-100), (y1+y2)//2), f"H = {H:.0f} mm",
+              fill="red", font=font)
 
-    st.title("🚜 Dolly Dynamic CG & Risk Evaluation Generator")
-    st.markdown("Generates an industrial-standard PDF evaluation dashboard matching dynamic stability requirements.")
+    out = io.BytesIO()
+    canvas.save(out, format="PNG")
+    return out.getvalue()
 
-    # --- SIDEBAR INPUTS ---
-    st.sidebar.header("1. Dolly Identification & Specifications")
-    dolly_name = st.sidebar.text_input("Dolly Name / Model", "S-5 DOLLY")
-    length = st.sidebar.number_input("Length (L) [mm]", min_value=100.0, value=1200.0, step=10.0)
-    width = st.sidebar.number_input("Width (W) [mm]", min_value=100.0, value=600.0, step=10.0)
-    height = st.sidebar.number_input("Height (H) [mm]", min_value=100.0, value=1250.0, step=10.0)
-    weight = st.sidebar.number_input("Loaded Weight [kg]", min_value=1.0, value=180.0, step=5.0)
+def build_pdf(data, annotated_png):
+    out = io.BytesIO()
+    doc = SimpleDocTemplate(
+        out, pagesize=A4,
+        rightMargin=12*mm, leftMargin=12*mm,
+        topMargin=12*mm, bottomMargin=12*mm
+    )
 
-    st.sidebar.header("2. Dynamic Acceleration Assumptions")
-    acc_push = st.sidebar.number_input("Push Acceleration (g)", min_value=0.05, value=0.30, step=0.05)
-    acc_brake = st.sidebar.number_input("Sudden Brake Deceleration (g)", min_value=0.05, value=0.50, step=0.05)
-    acc_turn = st.sidebar.number_input("Side Turning Acceleration (g)", min_value=0.05, value=0.20, step=0.05)
-    g_val = 9.81  # m/s^2
+    styles = getSampleStyleSheet()
+    title = ParagraphStyle(
+        "TitleX", parent=styles["Title"], fontSize=18, leading=22,
+        alignment=TA_CENTER, textColor=colors.HexColor("#0b3975"),
+        spaceAfter=8
+    )
+    section = ParagraphStyle(
+        "SectionX", parent=styles["Heading2"], fontSize=11, leading=14,
+        textColor=colors.white, backColor=colors.HexColor("#0b3975"),
+        spaceBefore=8, spaceAfter=6, leftIndent=5, rightIndent=5
+    )
+    body = ParagraphStyle(
+        "BodyX", parent=styles["BodyText"], fontSize=8.5, leading=11,
+        spaceAfter=4
+    )
+    small = ParagraphStyle(
+        "SmallX", parent=body, fontSize=7.5, leading=9
+    )
+    green = ParagraphStyle(
+        "GreenX", parent=body, textColor=colors.HexColor("#167a3a"),
+        fontName="Helvetica-Bold"
+    )
 
-    st.sidebar.header("3. Dolly Photo Upload")
-    uploaded_image = st.sidebar.file_uploader("Upload Dolly Photo (JPG/PNG)", type=["jpg", "jpeg", "png"])
+    story = []
+    story.append(Paragraph(
+        f"{data['name']} – DYNAMIC CG CALCULATION &amp; RISK EVALUATION",
+        title
+    ))
+    story.append(Paragraph(
+        f"Generated: {datetime.now().strftime('%d %b %Y, %H:%M')} | "
+        "Engineering calculation aid — verify assumptions before use.",
+        small
+    ))
 
-    st.sidebar.header("4. Sign-off Details")
-    prepared_by = st.sidebar.text_input("Prepared By", "Production Engineering")
-    checked_by = st.sidebar.text_input("Checked By", "Safety Lead")
-    approved_by = st.sidebar.text_input("Approved By", "Plant Manager")
+    # 1 Dolly details
+    story.append(Paragraph("1. DOLLY DETAILS", section))
+    details = [
+        ["Parameter", "Value"],
+        ["Dolly name", data["name"]],
+        ["Length (L)", f"{fmt(data['L'],0)} mm"],
+        ["Width (W)", f"{fmt(data['W'],0)} mm"],
+        ["Height (H)", f"{fmt(data['H'],0)} mm"],
+        ["Dolly empty weight", f"{fmt(data['weight'],0)} kg"],
+        ["Safe working load", f"{fmt(data['swl'],0)} kg"],
+        ["Caster arrangement", data["caster"]],
+        ["Surface", data["surface"]],
+        ["Maximum operating speed", f"{fmt(data['speed'],2)} m/s"],
+    ]
+    t = Table(details, colWidths=[65*mm, 105*mm])
+    t.setStyle(TableStyle([
+        ("BACKGROUND",(0,0),(-1,0),colors.HexColor("#dbe8f7")),
+        ("FONTNAME",(0,0),(-1,0),"Helvetica-Bold"),
+        ("GRID",(0,0),(-1,-1),0.4,colors.grey),
+        ("FONTSIZE",(0,0),(-1,-1),8),
+        ("VALIGN",(0,0),(-1,-1),"MIDDLE"),
+        ("ROWBACKGROUNDS",(0,1),(-1,-1),[colors.white, colors.HexColor("#f7f9fc")]),
+        ("TOPPADDING",(0,0),(-1,-1),4),
+        ("BOTTOMPADDING",(0,0),(-1,-1),4),
+    ]))
+    story.append(t)
 
-    # --- CORE ENGINEERING CALCULATIONS ---
-    cg_x_stat = length / 2
-    cg_y_stat = width / 2
-    cg_z_stat = height * 0.58  # Default loaded CG height (~58% total height)
+    # 2 image
+    story.append(Paragraph("2. DOLLY DIMENSIONS WITH RESPECT TO IMAGE", section))
+    story.append(Paragraph(
+        "The photograph is displayed with the user-entered L/W/H values. "
+        "The app does not claim that dimensions were measured from pixels; "
+        "actual dimensional verification should be done using a drawing or physical measurement.",
+        body
+    ))
+    tmp_img = Path("/tmp/dolly_annotated.png")
+    tmp_img.write_bytes(annotated_png)
+    im = RLImage(str(tmp_img))
+    im._restrictSize(175*mm, 105*mm)
+    story.append(im)
 
-    delta_x_push = cg_z_stat * acc_push
-    delta_x_brake = cg_z_stat * acc_brake
-    delta_y_turn = cg_z_stat * acc_turn
+    # 3 static
+    story.append(Paragraph("3. STATIC CG CALCULATION", section))
+    static = [
+        ["Parameter", "Formula / Result"],
+        ["Assumption", "Uniform load distribution; CG at geometric center"],
+        ["CG X", "L / 2 = " + fmt(data["L"]/2) + " mm"],
+        ["CG Y", "W / 2 = " + fmt(data["W"]/2) + " mm"],
+        ["CG Z (height)", "H / 2 = " + fmt(data["H"]/2) + " mm"],
+        ["Static CG", f"({fmt(data['L']/2)}, {fmt(data['W']/2)}, {fmt(data['H']/2)}) mm"],
+    ]
+    t = Table(static, colWidths=[55*mm, 115*mm])
+    t.setStyle(TableStyle([
+        ("BACKGROUND",(0,0),(-1,0),colors.HexColor("#dbe8f7")),
+        ("FONTNAME",(0,0),(-1,0),"Helvetica-Bold"),
+        ("GRID",(0,0),(-1,-1),0.4,colors.grey),
+        ("FONTSIZE",(0,0),(-1,-1),8),
+        ("ROWBACKGROUNDS",(0,1),(-1,-1),[colors.white, colors.HexColor("#f7f9fc")]),
+    ]))
+    story.append(t)
 
-    cg_push = (cg_x_stat + delta_x_push, cg_y_stat, cg_z_stat)
-    cg_brake = (cg_x_stat + delta_x_brake, cg_y_stat, cg_z_stat)
-    cg_turn = (cg_x_stat, cg_y_stat + delta_y_turn, cg_z_stat)
+    # 4 dynamic
+    story.append(Paragraph("4. DYNAMIC CG CALCULATION", section))
+    story.append(Paragraph(
+        "Dynamic CG shift is estimated using Δx = (|aₓ|/g) × h and "
+        "Δy = (|aᵧ|/g) × h, where h = H/2. Sign indicates the direction of motion.",
+        body
+    ))
+    dyn = [
+        ["Condition", "Acceleration", "Shift formula", "Shift", "Dynamic CG"],
+        ["Braking", f"{data['braking_g']:.2f} g",
+         "Δx = (|aₓ|/g) × h", f"{data['dx_brake']:.1f} mm",
+         f"({data['cx']-data['dx_brake']:.1f}, {data['cy']:.1f}, {data['cz']:.1f})"],
+        ["Acceleration", f"{data['accel_g']:.2f} g",
+         "Δx = (|aₓ|/g) × h", f"{data['dx_accel']:.1f} mm",
+         f"({data['cx']+data['dx_accel']:.1f}, {data['cy']:.1f}, {data['cz']:.1f})"],
+        ["Turning", f"{data['turn_g']:.2f} g",
+         "Δy = (|aᵧ|/g) × h", f"{data['dy_turn']:.1f} mm",
+         f"({data['cx']:.1f}, {data['cy']+data['dy_turn']:.1f}, {data['cz']:.1f})"],
+    ]
+    t = Table(dyn, colWidths=[28*mm, 25*mm, 42*mm, 25*mm, 50*mm])
+    t.setStyle(TableStyle([
+        ("BACKGROUND",(0,0),(-1,0),colors.HexColor("#dbe8f7")),
+        ("FONTNAME",(0,0),(-1,0),"Helvetica-Bold"),
+        ("GRID",(0,0),(-1,-1),0.4,colors.grey),
+        ("FONTSIZE",(0,0),(-1,-1),7),
+        ("VALIGN",(0,0),(-1,-1),"MIDDLE"),
+    ]))
+    story.append(t)
+    story.append(Paragraph(
+        f"Worst single-direction shifts: braking = {data['dx_brake']:.1f} mm, "
+        f"acceleration = {data['dx_accel']:.1f} mm, turning = {data['dy_turn']:.1f} mm.",
+        body
+    ))
 
-    dsi_push = (length / 2) / cg_push[0] if cg_push[0] > 0 else 0
-    dsi_brake = (length / 2) / cg_brake[0] if cg_brake[0] > 0 else 0
+    # 5 stability
+    story.append(Paragraph("5. STABILITY CHECK", section))
+    sx_min, sx_max = 0, data["L"]
+    sy_min, sy_max = 0, data["W"]
+    candidates = [
+        ("Braking", data["cx"]-data["dx_brake"], data["cy"]),
+        ("Acceleration", data["cx"]+data["dx_accel"], data["cy"]),
+        ("Turning right", data["cx"], data["cy"]+data["dy_turn"]),
+    ]
+    # A conservative combined corner case using vector sum.
+    comb_x = data["cx"] - data["dx_brake"]
+    comb_y = data["cy"] + data["dy_turn"]
+    candidates.append(("Braking + turning (combined)", comb_x, comb_y))
 
-    def get_risk_level(dsi):
-        if dsi > 1.20: return "SAFE", (0, 150, 0)
-        elif 1.00 <= dsi <= 1.20: return "ACCEPTABLE", (0, 100, 250)
-        elif 0.80 <= dsi < 1.00: return "MODERATE", (255, 140, 0)
-        else: return "HIGH RISK", (200, 0, 0)
-
-    overall_risk_text, overall_risk_color = get_risk_level(dsi_brake)
-
-    # --- DASHBOARD PREVIEW ---
-    col_left, col_right = st.columns([1, 1])
-    with col_left:
-        st.subheader("📋 Static & Dynamic Metrics")
-        st.write(f"**Static CG:** `{cg_x_stat:.1f}, {cg_y_stat:.1f}, {cg_z_stat:.1f} mm`")
-        st.write(f"**Brake Dynamic Shift:** `{delta_x_brake:.1f} mm` -> `{cg_brake[0]:.1f} mm`")
-    with col_right:
-        st.subheader("⚠️ Dynamic Stability Index (DSI)")
-        st.metric("DSI (Sudden Brake Worst-Case)", f"{dsi_brake:.2f}")
-        st.markdown(f"**Overall Risk Status:** `{overall_risk_text}`")
-
-    # --- SUPPORT POLYGON DIAGRAM ---
-    def generate_support_polygon_diagram():
-        fig, ax = plt.subplots(figsize=(4, 2.5), dpi=200)
-        rect = plt.Rectangle((0, 0), length, width, facecolor='#E2EFDA', edgecolor='#375623', linewidth=2)
-        ax.add_patch(rect)
-        w_w, w_h = length * 0.08, width * 0.15
-        for px, py in [(0,0), (length-w_w,0), (0,width-w_h), (length-w_w,width-w_h)]:
-            ax.add_patch(plt.Rectangle((px, py), w_w, w_h, color='black'))
-        ax.plot(cg_x_stat, cg_y_stat, 'yo', markeredgecolor='black', markersize=8, label='Static CG')
-        ax.plot(cg_brake[0], cg_brake[1], 'ro', markersize=8, label='Dynamic CG')
-        ax.set_xlim(-length*0.1, length*1.1)
-        ax.set_ylim(-width*0.2, width*1.2)
-        ax.legend(loc='lower right', fontsize=7)
-        ax.axis('off')
-        tmp_path = tempfile.NamedTemporaryFile(delete=False, suffix=".png").name
-        plt.savefig(tmp_path, bbox_inches='tight')
-        plt.close()
-        return tmp_path
-
-    # --- PDF GENERATOR ---
-    class IndustrialReportPDF(FPDF):
-        def header(self): pass
-        def footer(self): pass
-
-    def generate_pdf():
-        pdf = IndustrialReportPDF(orientation='P', unit='mm', format='A4')
-        pdf.add_page()
-        pdf.set_margins(8, 8, 8)
-        pdf.set_auto_page_break(auto=False)
-
-        NAVY = (15, 37, 55)
-        LIGHT_BLUE = (222, 235, 247)
-        WHITE = (255, 255, 255)
-
-        # 0. TITLE BANNER
-        pdf.set_fill_color(*NAVY)
-        pdf.rect(8, 8, 194, 10, style='F')
-        pdf.set_font('Helvetica', 'B', 12)
-        pdf.set_text_color(*WHITE)
-        pdf.set_xy(10, 9)
-        pdf.cell(190, 8, f"{dolly_name.upper()} - DYNAMIC CG CALCULATION & RISK EVALUATION", align='C')
-
-        # 1. TOP ROW: DETAILS, STATIC CG, ASSUMPTIONS, IMAGE, DIMS
-        y_top = 18
-        pdf.set_text_color(0, 0, 0)
-        
-        pdf.set_fill_color(*NAVY)
-        pdf.set_text_color(*WHITE)
-        pdf.set_font('Helvetica', 'B', 8)
-        pdf.set_xy(8, y_top)
-        pdf.cell(60, 5, "DOLLY DETAILS", border=1, align='C', fill=True)
-      
-        pdf.set_text_color(0, 0, 0)
-        pdf.set_font('Helvetica', '', 7)
-        details = [("Dolly Name", dolly_name), ("Length (L)", f"{length:.0f} mm"), 
-                   ("Width (W)", f"{width:.0f} mm"), ("Height (H)", f"{height:.0f} mm"), 
-                   ("Loaded Weight", f"{weight:.0f} kg")]
-        cy = y_top + 5
-        for lbl, val in details:
-            pdf.set_xy(8, cy)
-            pdf.cell(30, 3.2, lbl, border=1)
-            pdf.cell(30, 3.2, val, border=1, align='C')
-            cy += 3.2
-
-        cy += 1
-        pdf.set_fill_color(*NAVY)
-        pdf.set_text_color(*WHITE)
-        pdf.set_font('Helvetica', 'B', 8)
-        pdf.set_xy(8, cy)
-        pdf.cell(60, 5, "ESTIMATED STATIC CG", border=1, align='C', fill=True)
-      
-        pdf.set_text_color(0, 0, 0)
-        pdf.set_font('Helvetica', '', 8)
-        cg_dets = [("CG-X (Length)", f"{cg_x_stat:.0f} mm"), ("CG-Y (Width)", f"{cg_y_stat:.0f} mm"),
-                   ("CG-Z (Height)", f"{cg_z_stat:.0f} mm"), ("Reference Point", "Front-Left-Bottom")]
-        cy += 5
-        for lbl, val in cg_dets:
-            pdf.set_xy(8, cy)
-            pdf.cell(30, 3.2, lbl, border=1)
-            pdf.cell(30, 3.2, val, border=1, align='C')
-            cy += 3.2
-
-        cy += 1
-        pdf.set_fill_color(*LIGHT_BLUE)
-        pdf.rect(8, cy, 60, 4.5, 'F')
-        # pdf.rect(8, cy, 60, 21.5, 'D')
-        assumptions_box_h = 35
-        pdf.rect(8, cy, 60, assumptions_box_h, 'D')
-        pdf.set_font('Helvetica', 'B', 8)
-        pdf.set_xy(8, cy)
-        pdf.cell(60, 4.5, "ASSUMPTIONS", align='C')
-        pdf.set_font('Helvetica', '', 6.5)
-        pdf.set_xy(9, cy + 5)
-        assumptions_text = (
-        f"- Push accel = {acc_push} g ({acc_push*g_val:.2f} m/s²)\n"
-        f"- Stop/Brake = {acc_brake} g ({acc_brake*g_val:.2f} m/s²)\n"
-        f"- Side turn = {acc_turn} g ({acc_turn*g_val:.2f} m/s²)\n"
-        f"- g (gravity) = {g_val} m/s²"
+    rows = [["Condition", "CG X (mm)", "CG Y (mm)", "Inside support?"]]
+    for label, x, y in candidates:
+        inside = (sx_min <= x <= sx_max and sy_min <= y <= sy_max)
+        rows.append([label, f"{x:.1f}", f"{y:.1f}", "YES" if inside else "NO"])
+    t = Table(rows, colWidths=[80*mm, 30*mm, 30*mm, 30*mm])
+    t.setStyle(TableStyle([
+        ("BACKGROUND",(0,0),(-1,0),colors.HexColor("#dbe8f7")),
+        ("FONTNAME",(0,0),(-1,0),"Helvetica-Bold"),
+        ("GRID",(0,0),(-1,-1),0.4,colors.grey),
+        ("FONTSIZE",(0,0),(-1,-1),8),
+    ]))
+    story.append(t)
+    worst_inside = all(
+        sx_min <= x <= sx_max and sy_min <= y <= sy_max
+        for _, x, y in candidates
+    )
+    story.append(Paragraph(
+        ("RESULT: CG remains within the geometric support base for the "
+         "assumed dynamic cases." if worst_inside else
+         "RESULT: CG moves outside the geometric support base for at least "
+         "one assumed case; engineering review is required."),
+        green if worst_inside else ParagraphStyle(
+            "red", parent=body, textColor=colors.red, fontName="Helvetica-Bold"
         )
-        pdf.multi_cell(58, 3.8, assumptions_text)
+    ))
 
-        top_section_bottom = cy + assumptions_box_h
-      
-        pdf.rect(72, y_top, 70, 64)
-        if uploaded_image:
-            img = Image.open(uploaded_image).convert('RGB')
-            tmp_img = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg").name
-            img.save(tmp_img)
-            pdf.image(tmp_img, x=73, y=y_top+1, w=68, h=62)
-            os.remove(tmp_img)
-        else:
-            pdf.set_xy(72, y_top+29)
-            pdf.set_font('Helvetica', 'B', 8)
-            pdf.cell(70, 5, "[ Image Placeholder ]", align='C')
+    # 6 risk
+    story.append(Paragraph("6. RISK EVALUATION", section))
+    # Dynamic risk scoring based on the supplied engineering assumptions.
+    # Severity is fixed by hazard type; likelihood is increased when stability
+    # margin is small or a dynamic case leaves the base.
+    worst_margin_x = min(comb_x, data["L"]-comb_x)
+    worst_margin_y = min(comb_y, data["W"]-comb_y)
+    margin = min(worst_margin_x, worst_margin_y)
+    if not worst_inside:
+        likelihood_dyn = 5
+    elif margin < min(data["L"], data["W"]) * 0.15:
+        likelihood_dyn = 4
+    elif margin < min(data["L"], data["W"]) * 0.25:
+        likelihood_dyn = 3
+    else:
+        likelihood_dyn = 2
 
-        pdf.rect(146, y_top, 56, 64)
-        pdf.set_font('Helvetica', 'B', 8)
-        pdf.set_xy(146, y_top+2)
-        pdf.cell(56, 5, "DIMENSIONS & LIMITS", align='C')
-        pdf.set_font('Helvetica', '', 7)
-        pdf.set_xy(148, y_top+10)
-        pdf.multi_cell(52, 4, f"Z (Height) = {height:.0f} mm\nY (Width) = {width:.0f} mm\nX (Length) = {length:.0f} mm\n\nSupport Base Limits:\nHalf Wheelbase (L/2) = {length/2:.0f} mm\nHalf Track (W/2) = {width/2:.0f} mm\n\nStatic CG Vector:\n[{cg_x_stat:.0f}, {cg_y_stat:.0f}, {cg_z_stat:.0f}] mm")
+    overload_likelihood = 2 if data["swl"] >= data["weight"] else 5
+    hazards = [
+        ("Tipping due to dynamic motion", "Injury / damage / loss of load", 4, likelihood_dyn),
+        ("Overloading", "Tipping / caster or frame failure", 5, overload_likelihood),
+        ("Sudden braking", "Load shift / loss of control", 4, max(3, likelihood_dyn)),
+        ("Turning at high speed", "Tipping / loss of control", 4, max(3, likelihood_dyn)),
+        ("Uneven floor condition", "Instability / caster damage", 3, 2),
+    ]
+    risk_rows = [["Hazard", "Possible effect", "S", "L", "S×L", "Risk"]]
+    for h, e, s, l in hazards:
+        score = s*l
+        risk_rows.append([h, e, str(s), str(l), str(score), risk_level(score)])
+    t = Table(risk_rows, colWidths=[47*mm, 55*mm, 12*mm, 12*mm, 15*mm, 20*mm])
+    t.setStyle(TableStyle([
+        ("BACKGROUND",(0,0),(-1,0),colors.HexColor("#dbe8f7")),
+        ("FONTNAME",(0,0),(-1,0),"Helvetica-Bold"),
+        ("GRID",(0,0),(-1,-1),0.4,colors.grey),
+        ("FONTSIZE",(0,0),(-1,-1),7),
+        ("VALIGN",(0,0),(-1,-1),"MIDDLE"),
+    ]))
+    story.append(t)
+    story.append(Paragraph(
+        "Risk rating = Severity × Likelihood. Scale: LOW 1–6, MEDIUM 7–12, HIGH 13–25. "
+        "The likelihood values are an engineering screening assumption and should be validated by the site's risk-assessment procedure.",
+        small
+    ))
 
-        # 2. DYNAMIC CG SHIFT CALCULATION
-        # y_dyn = 85
+    # 7 controls
+    story.append(Paragraph("7. RISK CONTROL MEASURES / PHYSICAL COUNTERMEASURES", section))
+    controls = [
+        "Install rigid front/rear or side guards and positive load-restraint straps to prevent load displacement.",
+        f"Display a clearly visible Safe Working Load label: {data['swl']:.0f} kg (verify by structural/caster design).",
+        f"Display a maximum operating speed label: {data['speed']:.2f} m/s; prohibit sudden braking and high-speed turns.",
+        "Use caster brakes/locks whenever the dolly is stationary or being loaded/unloaded.",
+        "Provide a defined, level travel path and floor markings; avoid potholes, ramps and uneven surfaces unless assessed.",
+        "Provide a robust push/pull handle and keep the operator behind the direction of travel.",
+        "Use shock-absorbing corner bumpers where collision with fixed structures is possible.",
+        "Keep the load evenly distributed and as low as practicable to reduce CG height.",
+        "Inspect frame, welds, casters, brakes and restraints before use; remove damaged dollies from service.",
+        "Use appropriate site PPE and follow the plant's material-handling SOP."
+    ]
+    for i, c in enumerate(controls, 1):
+        story.append(Paragraph(f"☑ {c}", body))
 
-        top_row_bottom = y_top + 64
-        y_dyn = max(top_row_bottom, top_section_bottom) + 4
-        pdf.set_fill_color(*NAVY)
-        pdf.set_text_color(*WHITE)
-        pdf.set_font('Helvetica', 'B', 9)
-        pdf.set_xy(8, y_dyn)
-        pdf.cell(194, 6, "1. DYNAMIC CG SHIFT CALCULATION", border=1, align='C', fill=True)
-
-        col_w = 63.3
-        conds = [
-            ("1.1 NORMAL PUSH", acc_push, delta_x_push, cg_push, "X (Fwd)"),
-            ("1.2 SUDDEN BRAKE", acc_brake, delta_x_brake, cg_brake, "X (Fwd Limit)"),
-            ("1.3 SIDE TURNING", acc_turn, delta_y_turn, cg_turn, "Y (Lateral)")
-        ]
-
-        y_dyn_box = y_dyn + 7
-        dyn_box_h = 35
-        for idx, (title, acc, delta, vec, direc) in enumerate(conds):
-            cx = 8 + idx * (col_w + 2)
-            pdf.set_fill_color(*LIGHT_BLUE)
-            pdf.set_text_color(0, 0, 0)
-            pdf.set_font('Helvetica', 'B', 8)
-            pdf.set_xy(cx, y_dyn_box)
-            pdf.cell(col_w, 5, title, border=1, align='C', fill=True)
-            pdf.rect(cx, y_dyn_box+5, col_w, dyn_box_h)
-            pdf.set_font('Helvetica', '', 7)
-            pdf.set_xy(cx+2, y_dyn_box+6)
-            formula_txt = f"Formula: Delta = (h * a) / g\nh = {cg_z_stat:.0f} mm, a = {acc}g\nDelta = ({cg_z_stat:.0f} * {acc}g) / g = {delta:.1f} mm\n\nResulting Dynamic CG Vector:\n({vec[0]:.0f}, {vec[1]:.0f}, {vec[2]:.0f}) mm"
-            # pdf.multi_cell(col_w-4, 3.8, formula_txt, align='L')
-            pdf.multi_cell(col_w-4, 3.3, formula_txt)
-          
-        # 3. STABILITY CHECK & DSI
-        # y_stab = 123
-
-        y_stab = y_dyn_box + dyn_box_h + 6
-        pdf.set_fill_color(*NAVY)
-        pdf.set_text_color(*WHITE)
-        pdf.set_font('Helvetica', 'B', 9)
-        pdf.set_xy(8, y_stab)
-        pdf.cell(118, 6, "2. STABILITY CHECK", border=1, align='C', fill=True)
-        pdf.set_xy(128, y_stab)
-        pdf.cell(74, 6, "3. DYNAMIC STABILITY INDEX (DSI)", border=1, align='C', fill=True)
-        
-        # Stability Check Table
-        pdf.set_text_color(0, 0, 0)
-        pdf.set_font('Helvetica', 'B', 7)
-        cols_stab = ["Condition", "Dyn X", "Dyn Y", "Dyn Z", "L/2 Lim", "W/2 Lim", "Result"]
-        w_stab = [22, 14, 14, 14, 18, 18, 18]
-        pdf.set_xy(8, y_stab + 7)
-        for w, h in zip(w_stab, cols_stab): pdf.cell(w, 5, h, border=1, align='C')
-        
-        pdf.set_font('Helvetica', '', 7)
-        rows_stab = [
-            ("Static", cg_x_stat, cg_y_stat, cg_z_stat, length/2, width/2, "STABLE"),
-            (f"Push ({acc_push}g)", cg_push[0], cg_push[1], cg_push[2], length/2, width/2, "STABLE"),
-            (f"Brake ({acc_brake}g)", cg_brake[0], cg_brake[1], cg_brake[2], length/2, width/2,
-        overall_risk_text),
-            (f"Turn ({acc_turn}g)", cg_turn[0], cg_turn[1], cg_turn[2], length/2, width/2, "MODERATE")
-        ]
-        cy = y_stab + 12
-        for r in rows_stab:
-            pdf.set_xy(8, cy)
-            pdf.cell(w_stab[0], 4.5, r[0], border=1)
-            pdf.cell(w_stab[1], 4.5, f"{r[1]:.0f}", border=1, align='C')
-            pdf.cell(w_stab[2], 4.5, f"{r[2]:.0f}", border=1, align='C')
-            pdf.cell(w_stab[3], 4.5, f"{r[3]:.0f}", border=1, align='C')
-            pdf.cell(w_stab[4], 4.5, f"{r[4]:.0f}", border=1, align='C')
-            pdf.cell(w_stab[5], 4.5, f"{r[5]:.0f}", border=1, align='C')
-            pdf.cell(w_stab[6], 4.5, r[6], border=1, align='C')
-            cy += 4.5
-        # DSI Matrix
-        pdf.set_xy(128, y_stab + 7)
-        pdf.set_font('Helvetica', 'B', 7)
-        pdf.cell(74, 5, f"Formula: DSI = (Half Wheelbase) / Dynamic CG_X", border=1, align='C')
-        pdf.set_xy(128, y_stab + 12)
-        for w, h in zip([28, 15, 12, 19], ["Condition", "Dyn CG-X", "DSI", "Risk Level"]):
-          pdf.cell(w, 5, h, border=1, align='C')
-            
-        pdf.set_font('Helvetica', '', 7)
-        dsi_rows = [("Normal Push", cg_push[0], dsi_push, get_risk_level(dsi_push)[0]),
-            ("Sudden Brake", cg_brake[0], dsi_brake, overall_risk_text)]
-        cy_dsi = y_stab + 17
-        for r in dsi_rows:
-            pdf.set_xy(128, cy_dsi)
-            pdf.cell(28, 4.5, r[0], border=1)
-            pdf.cell(15, 4.5, f"{r[1]:.0f}", border=1, align='C')
-            pdf.cell(12, 4.5, f"{r[2]:.2f}", border=1, align='C')
-            pdf.cell(19, 4.5, r[3], border=1, align='C')
-            cy_dsi += 4.5
-        # Scale legend cleanly positioned above the next section
-        pdf.set_xy(128, cy_dsi + 1)
-        pdf.set_font('Helvetica', 'B', 5.5)
-        pdf.cell(74, 3.5, (
-           "SCALE: >1.20 (SAFE) | 1.0-1.20 (ACCEPT) | "
-           "0.8-1.0 (MODERATE) | <0.8 (HIGH RISK)"
-        ), align='C')
-
-        # 4. RESULT SUMMARY & 5. RECOMMENDATIONS & 6. DIAGRAM (Shifted y_res down to 162)
-        # y_res = 162
-
-        y_res = y_stab + 48
-        pdf.set_fill_color(*NAVY)
-        pdf.set_text_color(*WHITE)
-        pdf.set_font('Helvetica', 'B', 8)
-        pdf.set_xy(8, y_res)
-        pdf.cell(60, 6, "4. RESULT SUMMARY", border=1, align='C', fill=True)
-        pdf.set_xy(72, y_res)
-        pdf.cell(64, 6, "5. RECOMMENDATIONS", border=1, align='C', fill=True)
-        pdf.set_xy(140, y_res)
-        pdf.cell(62, 6, "6. SUPPORT POLYGON", border=1, align='C', fill=True)
-        pdf.set_text_color(0, 0, 0)
-        # Summary Box Frame
-        pdf.rect(8, y_res+6, 60, 25)
-        pdf.set_font('Helvetica', '', 7.5)
-        pdf.set_xy(10, y_res+7.5)
-        sum_txt = (f"Static CG: ({cg_x_stat:.0f}, {cg_y_stat:.0f}, {cg_z_stat:.0f}) mm\n"
-                   f"Push CG: ({cg_push[0]:.0f}, {cg_push[1]:.0f}, {cg_push[2]:.0f}) mm\n"
-                   f"Brake CG: ({cg_brake[0]:.0f}, {cg_brake[1]:.0f}, {cg_brake[2]:.0f}) mm\n"
-                   f"Turn CG: ({cg_turn[0]:.0f}, {cg_turn[1]:.0f}, {cg_turn[2]:.0f}) mm"
-                  )
-        pdf.multi_cell(56, 3.5, sum_txt)
-        
-        # --- COLOR-CODED OVERALL EVALUATION BADGE ---
-        
-        pdf.set_xy(10, y_res + 23)
-        pdf.set_font('Helvetica', 'B', 7.5)
-        pdf.cell(22, 5, "OVERALL EVAL:", align='L')
-        
-        # Determine colors: GREEN, YELLOW, ORANGE, RED
-        if "SAFE" in overall_risk_text:
-           bg_color, fg_color = (0, 150, 0), (255, 255, 255) # GREEN (White text)
-        elif "ACCEPT" in overall_risk_text:
-           bg_color, fg_color = (255, 220, 0), (0, 0, 0) # YELLOW (Black text)
-        elif "MODERATE" in overall_risk_text:
-           bg_color, fg_color = (255, 140, 0), (255, 255, 255) # ORANGE (White text)
-        else:
-           bg_color, fg_color = (200, 0, 0), (255, 255, 255) # RED / HIGH RISK (White text)
-
-        # Draw color background rectangle and label text
-        pdf.set_fill_color(*bg_color)
-        pdf.rect(33, y_res + 23.5, 33, 5, 'F')
-        pdf.set_xy(33, y_res + 23.5)
-        pdf.set_font('Helvetica', 'B', 7.5)
-        pdf.set_text_color(*fg_color)
-        pdf.cell(33, 5, overall_risk_text, align='C')
-        pdf.set_text_color(0, 0, 0) # Reset font color back to black
-
-        # Recommendations Box
-        pdf.rect(72, y_res+6, 64, 25)
-        pdf.set_xy(74, y_res+8)
-        rec_txt = (
-           "- Limit dolly speed to <= 3 km/h.\n"
-           "- Avoid sudden stops and sharp turns.\n"
-           "- Reduce CG height whenever possible.\n"
-           "- Ensure load is properly secured.\n"
-           "- Use dolly on smooth, level floors only."
+    # 8 summary
+    story.append(Paragraph("8. SUMMARY", section))
+    result_text = (
+        f"The calculated static CG is ({data['cx']:.1f}, {data['cy']:.1f}, {data['cz']:.1f}) mm. "
+        f"Under the assumed braking, acceleration and turning inputs, the largest individual "
+        f"CG shifts are {data['dx_brake']:.1f} mm longitudinally and {data['dy_turn']:.1f} mm laterally. "
+    )
+    if worst_inside:
+        result_text += (
+            "The evaluated CG positions remain within the geometric support base. "
+            "This indicates geometric stability for the stated assumptions, not a certification of the dolly."
         )
-        pdf.multi_cell(60, 3.8, rec_txt)
-
-        # Polygon Box
-        pdf.rect(140, y_res+6, 62, 25)
-        poly_img = generate_support_polygon_diagram()
-        pdf.image(poly_img, x=142, y=y_res+7, w=58, h=23)
-        os.remove(poly_img)
-
-        # 7. RISK EVALUATION HAZARD MATRIX
-        # y_haz = 191
-
-        y_haz = y_res + 33
-        pdf.set_fill_color(*NAVY)
-        pdf.set_text_color(*WHITE)
-        pdf.set_font('Helvetica', 'B', 8)
-        pdf.set_xy(8, y_haz)
-        pdf.cell(194, 6, "7. RISK EVALUATION HAZARD MATRIX", border=1, align='C', fill=True)
-
-        pdf.set_text_color(0, 0, 0)
-        pdf.set_font('Helvetica', 'B', 7)
-        cols_haz = ["HAZARD", "POSSIBLE EFFECT", "SEVERITY (1-5)", "LIKELIHOOD (1-5)", "RATING (SxL)", "RISK LEVEL"]
-        w_haz = [54, 50, 25, 25, 20, 20]
-        pdf.set_xy(8, y_haz + 7)
-        for w, h in zip(w_haz, cols_haz): pdf.cell(w, 5, h, border=1, align='C')
-
-        pdf.set_font('Helvetica', '', 7)
-        haz_rows = [
-            ("1. Toppling due to sudden dynamic braking", "Injury, Damage to parts", "4", "3", "12", "HIGH RISK" if "HIGH" in overall_risk_text else "MEDIUM"),
-            ("2. Instability on uneven floor conditions", "Caster damage, Load shift", "3", "2", "6", "LOW"),
-            ("3. Overloading structure", "Frame/Caster failure", "5", "1", "5", "LOW")
-        ]
-        cy = y_haz + 12
-        for r in haz_rows:
-            pdf.set_xy(8, cy)
-            pdf.cell(w_haz[0], 5, r[0], border=1)
-            pdf.cell(w_haz[1], 5, r[1], border=1)
-            pdf.cell(w_haz[2], 5, r[2], border=1, align='C')
-            pdf.cell(w_haz[3], 5, r[3], border=1, align='C')
-            pdf.cell(w_haz[4], 5, r[4], border=1, align='C')
-            pdf.cell(w_haz[5], 5, r[5], border=1, align='C')
-            cy += 5
-
-        # 8. SIGN OFF (BOTTOM)
-        # y_sign = 275
-        # pdf.set_text_color(0, 0, 0)
-        # pdf.set_font('Helvetica', '', 8)
-        # blocks = [("PREPARED BY", prepared_by, datetime.date.today().strftime("%d-%m-%Y")),
-        #           ("CHECKED BY", checked_by, "---"),
-        #           ("APPROVED BY", approved_by, "---")]
-        # for idx, (role, name, dt) in enumerate(blocks):
-        #     bx = 8 + idx * 65
-        #     pdf.set_xy(bx, y_sign)
-        #     pdf.cell(60, 4, f"{role}: {name}", border='LTR')
-        #     pdf.set_xy(bx, y_sign + 4)
-        #     pdf.cell(60, 4, f"DATE: {dt}", border='LBR')
-
-        return bytes(pdf.output())
-
-
-    # --- DOWNLOAD BUTTON ---
-    st.markdown("---")
-    if st.button("📄 Generate & Download Dashboard PDF Report", type="primary"):
-        pdf_data = generate_pdf()
-        st.download_button(
-            label="📥 Download PDF Report",
-            data=pdf_data,
-            file_name=f"{dolly_name.replace(' ', '_')}_CG_Evaluation.pdf",
-            mime="application/pdf"
+    else:
+        result_text += (
+            "At least one evaluated CG position falls outside the geometric support base. "
+            "The dolly should not be released for that condition without engineering review and corrective action."
         )
+    story.append(Paragraph(result_text, body))
+    story.append(Spacer(1, 5))
+    story.append(Paragraph(
+        "IMPORTANT: This tool is a preliminary engineering calculation aid. It does not replace "
+        "structural analysis, caster/wheel load calculations, braking tests, floor-condition assessment, "
+        "manufacturer limits, or a formal workplace risk assessment.",
+        ParagraphStyle("Warn", parent=body, textColor=colors.HexColor("#8a3b00"), fontName="Helvetica-Bold")
+    ))
 
-# ==========================================
-# GATEKEEPER ROUTING
-# ==========================================
-if not st.session_state["authenticated"]:
-    login_screen()
+    doc.build(story)
+    return out.getvalue()
+
+# -----------------------------
+# UI
+# -----------------------------
+st.title("Dolly Dynamic CG Calculation & Risk Evaluation")
+st.caption("Enter the dolly dimensions, upload its photograph, review the calculated results, and generate a structured PDF report.")
+
+with st.sidebar:
+    st.header("1. Dolly Input")
+    name = st.text_input("Dolly Name", value="S15")
+    L = st.number_input("Length L (mm)", min_value=1.0, value=800.0, step=10.0)
+    W = st.number_input("Width W (mm)", min_value=1.0, value=740.0, step=10.0)
+    H = st.number_input("Height H (mm)", min_value=1.0, value=1550.0, step=10.0)
+    uploaded = st.file_uploader("Dolly Image", type=["jpg", "jpeg", "png"])
+
+    st.header("2. Optional / Advanced Inputs")
+    weight = st.number_input("Dolly weight (kg)", min_value=0.0, value=180.0, step=5.0)
+    swl = st.number_input("Safe Working Load (kg)", min_value=0.0, value=300.0, step=5.0)
+    caster = st.text_input("Caster arrangement", value="2 Fixed + 2 Swivel")
+    surface = st.text_input("Operating surface", value="Smooth, level floor")
+    speed = st.number_input("Maximum operating speed (m/s)", min_value=0.0, value=1.2, step=0.1)
+    accel_g = st.number_input("Acceleration (+g)", min_value=0.0, value=0.30, step=0.05)
+    braking_g = st.number_input("Braking magnitude (+g)", min_value=0.0, value=0.50, step=0.05)
+    turn_g = st.number_input("Turning lateral acceleration (+g)", min_value=0.0, value=0.40, step=0.05)
+
+if not uploaded:
+    st.info("Upload the dolly photograph to enable the report preview and PDF generation.")
+    st.stop()
+
+img_bytes = uploaded.getvalue()
+img = Image.open(io.BytesIO(img_bytes))
+
+# Calculations
+cx, cy, cz = L/2, W/2, H/2
+dx_accel = (accel_g) * cz
+dx_brake = (braking_g) * cz
+dy_turn = (turn_g) * cz
+
+comb_x = cx - dx_brake
+comb_y = cy + dy_turn
+combined_inside = (0 <= comb_x <= L) and (0 <= comb_y <= W)
+
+margin_x = min(comb_x, L-comb_x)
+margin_y = min(comb_y, W-comb_y)
+margin = min(margin_x, margin_y)
+
+if not combined_inside:
+    stability_status = "NOT STABLE FOR ASSUMED COMBINED CASE"
+elif margin < min(L, W)*0.15:
+    stability_status = "STABLE — LOW MARGIN"
 else:
-    main_app()
+    stability_status = "STABLE FOR ASSUMED CONDITIONS"
+
+likelihood_dyn = 5 if not combined_inside else (4 if margin < min(L,W)*0.15 else (3 if margin < min(L,W)*0.25 else 2))
+risk_summary = {
+    "Tipping": risk_level(4*likelihood_dyn),
+    "Overloading": risk_level(5*(2 if swl >= weight else 5)),
+    "Sudden braking": risk_level(4*max(3, likelihood_dyn)),
+    "High-speed turning": risk_level(4*max(3, likelihood_dyn)),
+    "Uneven floor": risk_level(3*2),
+}
+
+data = dict(
+    name=name, L=L, W=W, H=H, weight=weight, swl=swl, caster=caster,
+    surface=surface, speed=speed, accel_g=accel_g, braking_g=braking_g,
+    turn_g=turn_g, cx=cx, cy=cy, cz=cz, dx_accel=dx_accel,
+    dx_brake=dx_brake, dy_turn=dy_turn
+)
+
+annotated = make_dimension_image(img_bytes, L, W, H)
+
+col1, col2 = st.columns([1, 1])
+with col1:
+    st.subheader("Dolly Image")
+    st.image(img, use_container_width=True)
+with col2:
+    st.subheader("Dimension Reference")
+    st.image(annotated, use_container_width=True)
+
+st.divider()
+
+st.subheader("Calculated Results")
+r1, r2, r3, r4 = st.columns(4)
+r1.metric("Static CG X", f"{cx:.1f} mm")
+r2.metric("Static CG Y", f"{cy:.1f} mm")
+r3.metric("CG Height", f"{cz:.1f} mm")
+r4.metric("Stability", "PASS" if combined_inside else "REVIEW")
+
+results = [
+    ["Condition", "CG X (mm)", "CG Y (mm)", "Within support base"],
+    ["Static", f"{cx:.1f}", f"{cy:.1f}", "YES"],
+    ["Braking", f"{cx-dx_brake:.1f}", f"{cy:.1f}", "YES" if 0 <= cx-dx_brake <= L else "NO"],
+    ["Acceleration", f"{cx+dx_accel:.1f}", f"{cy:.1f}", "YES" if 0 <= cx+dx_accel <= L else "NO"],
+    ["Turning", f"{cx:.1f}", f"{cy+dy_turn:.1f}", "YES" if 0 <= cy+dy_turn <= W else "NO"],
+    ["Braking + Turning", f"{comb_x:.1f}", f"{comb_y:.1f}", "YES" if combined_inside else "NO"],
+]
+st.table(results)
+
+st.subheader("Risk Screening")
+risk_table = [
+    ["Hazard", "Severity", "Likelihood", "Risk"],
+    ["Tipping due to dynamic motion", "4", str(likelihood_dyn), risk_summary["Tipping"]],
+    ["Overloading", "5", "2" if swl >= weight else "5", risk_summary["Overloading"]],
+    ["Sudden braking", "4", str(max(3, likelihood_dyn)), risk_summary["Sudden braking"]],
+    ["Turning at high speed", "4", str(max(3, likelihood_dyn)), risk_summary["High-speed turning"]],
+    ["Uneven floor condition", "3", "2", risk_summary["Uneven floor"]],
+]
+st.table(risk_table)
+
+st.warning(
+    "The calculations use a simplified rigid-body/CG model. The photograph is for visual reference; "
+    "dimensions are not automatically measured from the image. Validate the assumptions before using the report for a production safety decision."
+)
+
+if st.button("Generate Detailed PDF Report", type="primary", use_container_width=True):
+    pdf = build_pdf(data, annotated)
+    st.download_button(
+        "Download PDF Report",
+        data=pdf,
+        file_name=f"{name.replace(' ', '_')}_Dynamic_CG_Risk_Evaluation.pdf",
+        mime="application/pdf",
+        use_container_width=True,
+    )
